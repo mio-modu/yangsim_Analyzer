@@ -128,6 +128,10 @@ canvas#cv{width:100%;max-width:400px;height:auto;display:block;margin:40px auto 
   font-family:var(--mono);font-size:11.5px;transition:transform .3s ease, opacity .3s ease, visibility .3s;z-index:20}
 .toast.on{transform:translateX(-50%) translateY(0);visibility:visible;opacity:1}
 
+.warn{margin:34px auto 0;max-width:23em;padding:16px 18px;border:1px solid #6B3A2E;
+  background:#1A0F0B;border-radius:3px;font-size:13px;line-height:1.7;color:#E0B3A4}
+.warn b{color:#F0C4B5;font-weight:500}
+
 @media (prefers-reduced-motion: reduce){*{transition-duration:.001ms !important;animation-duration:.001ms !important}}
 </style>
 <link rel="canonical" href="https://yangsim.vercel.app/">
@@ -231,16 +235,25 @@ const Store = {
     return this._tally(this._read().map(a=>a.path), mine);
   },
 
+  /* 저장 결과를 숨기지 않는다. 조용히 실패하면 며칠 뒤에야 알게 되고,
+     그 사이 들어온 사람들의 기록은 되돌릴 수 없다. */
   async save(rec){
     this._push(rec);
-    if(live()){
-      try{
-        await fetch(SUPABASE.url+'/rest/v1/'+SUPABASE.table, {
-          method:'POST',
-          headers:Object.assign(H(),{'Content-Type':'application/json', Prefer:'return=minimal'}),
-          body: JSON.stringify([{path:rec.path, hcq:rec.hcq, type:rec.type}])
-        });
-      }catch(e){}
+    if(!live()) return {ok:false, why:'서버가 연결돼 있지 않습니다'};
+    try{
+      const r = await fetch(SUPABASE.url+'/rest/v1/'+SUPABASE.table, {
+        method:'POST',
+        headers:Object.assign(H(),{'Content-Type':'application/json', Prefer:'return=minimal'}),
+        body: JSON.stringify([{path:rec.path, hcq:rec.hcq, type:rec.type}])
+      });
+      if(r.ok) return {ok:true};
+      let detail = '';
+      try{ const j = await r.json(); detail = j.message || j.hint || j.code || ''; }catch(e){}
+      console.error('[양심좌표] 저장 실패', r.status, detail);
+      return {ok:false, why:`서버가 ${r.status}로 거절했습니다${detail?' — '+detail:''}`};
+    }catch(e){
+      console.error('[양심좌표] 저장 실패(연결)', e);
+      return {ok:false, why:'서버에 닿지 못했습니다 — 주소나 네트워크를 확인하세요'};
     }
   },
 
@@ -396,7 +409,7 @@ const TYPES = [
 ];
 
 /* ── 상태 ── */
-const S = {i:0, stage:0, g:null, picks:[], stats:null, last:null};
+const S = {i:0, stage:0, g:null, picks:[], stats:null, saved:null, last:null};
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -607,6 +620,10 @@ function renderResult(){
         <button class="ghost" id="again">다시 해보기</button>
       </div>
 
+      ${(S.saved && !S.saved.ok) ? `<div class="warn">
+        <b>이 기록이 서버에 저장되지 않았습니다.</b><br>${esc(S.saved.why)}
+      </div>` : ''}
+
       <div class="foot">
         <p>지금 만들어지는 기계들은 우리가 남긴 글을 읽고 판단을 배웁니다.
         인류가 어디에서 갈라지는지는 아직 어디에도 적혀 있지 않습니다.</p>
@@ -675,7 +692,7 @@ async function copyText(txt){
 async function finish(){
   const pre = score();
   const mine = path();
-  await Store.save({path:mine, hcq:pre.hcq, type:pre.t.id});
+  S.saved = await Store.save({path:mine, hcq:pre.hcq, type:pre.t.id});
   S.stats = await Store.fetchAll(mine);
   $('#nCount').textContent = (S.stats.n||0).toLocaleString();
   renderResult();
