@@ -7,8 +7,26 @@
    - 공유 카드 생성
    Supabase 는 건드리지 않는다. 브라우저 저장소만 쓴다. */
 const {chromium} = require('playwright');
-const path = require('path');
-const FILE = 'file://' + path.resolve(__dirname, '..', 'index.html');
+const path = require('path'), fs = require('fs'), http = require('http');
+
+/* file:// 로 열면 같은 폴더의 이미지를 그린 캔버스가 '오염'돼 카드를 내보낼 수
+   없다. 실제 배포는 http 라서 생기지 않는 문제이므로, 검사도 http 로 띄운다. */
+const ROOT = path.resolve(__dirname, '..');
+const MIME = {'.html':'text/html','.jpg':'image/jpeg','.png':'image/png',
+              '.txt':'text/plain','.xml':'application/xml','.json':'application/json'};
+function serve(){
+  return new Promise(res=>{
+    const srv = http.createServer((req,rep)=>{
+      const rel = decodeURIComponent(req.url.split('?')[0]);
+      const file = path.join(ROOT, rel === '/' ? 'index.html' : rel);
+      if(!file.startsWith(ROOT) || !fs.existsSync(file)){ rep.writeHead(404); return rep.end(); }
+      rep.writeHead(200, {'Content-Type': MIME[path.extname(file)] || 'application/octet-stream'});
+      fs.createReadStream(file).pipe(rep);
+    });
+    srv.listen(0, '127.0.0.1', ()=>res(srv));
+  });
+}
+let FILE;
 
 const lin = c => { c/=255; return c<=.03928 ? c/12.92 : Math.pow((c+.055)/1.055, 2.4); };
 const lum = ([r,g,b]) => .2126*lin(r) + .7152*lin(g) + .0722*lin(b);
@@ -94,12 +112,15 @@ async function run(browser, label, width, seed){
 }
 
 (async () => {
+  const srv = await serve();
+  FILE = 'http://127.0.0.1:' + srv.address().port + '/';
   const browser = await chromium.launch();
   const bad = [];
   bad.push(...await run(browser, '모바일 390 · 응답 0건',   390, 0));
   bad.push(...await run(browser, '모바일 390 · 응답 120건', 390, 120));
   bad.push(...await run(browser, '데스크톱 900 · 응답 341건', 900, 341));
   await browser.close();
+  srv.close();
   console.log('\n' + (bad.length
     ? '✗ 문제 ' + bad.length + '건\n' + bad.map(x => '  - ' + x).join('\n')
     : '✓ 전부 통과'));
