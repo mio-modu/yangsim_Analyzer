@@ -122,12 +122,31 @@ $$;
 #### 【4】 권한 부여와 확인
 
 ```sql
+grant usage on schema public to anon;
+grant select, insert on table public.conscience_logs to anon;
 grant execute on function public.conscience_stats(text) to anon;
+
 notify pgrst, 'reload schema';
-select public.conscience_stats();
+
+select has_table_privilege('anon','public.conscience_logs','INSERT') as 넣기,
+       has_table_privilege('anon','public.conscience_logs','SELECT') as 읽기,
+       public.conscience_stats() as 집계;
 ```
 
-`{"n": 0, "q0": null, ..., "twin": 0, "same": 0}` 이 나오면 완료입니다.
+**넣기·읽기가 둘 다 `true`** 여야 합니다.
+
+> ⚠ **이 단계를 빼먹으면 조용히 실패합니다.** 실제로 여기서 걸렸습니다.
+>
+> RLS 정책(【1】의 `create policy`)은 *"누가 어떤 행을 다룰 수 있나"* 를 정합니다.
+> 그런데 그 **이전 단계**인 *"이 역할이 이 테이블을 건드릴 수 있나"* 는
+> 별개의 권한(GRANT)입니다. 정책만 만들고 권한을 안 주면
+> `401 permission denied for table` 로 거절당합니다.
+>
+> 증상이 헷갈립니다. SQL Editor 는 `postgres` 역할로 돌아가니 전부 잘 되는데,
+> 사이트에서 들어오는 요청만 `anon` 역할이라 막힙니다. 대시보드에서는
+> 멀쩡해 보이고 기록만 안 쌓입니다.
+
+집계 칸에 `{"n": 0, "q0": null, ..., "twin": 0, "same": 0}` 이 나오면 완료입니다.
 기록이 아직 0건이라 `q0`가 `null`인 것은 정상입니다.
 
 **무엇을 한 건지:**
