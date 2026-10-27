@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://yangsim.vercel.app/sitemap.xml
+Sitemap: https://yangsimanalyzer.vercel.app/sitemap.xml

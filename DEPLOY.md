@@ -206,7 +206,7 @@ const SUPABASE = {
 5. **Root Directory 는 건드리지 마세요.** 저장소 최상위가 곧 사이트입니다
 6. **Deploy**
 
-끝나면 `https://yangsim.vercel.app` 으로 열립니다.
+끝나면 `https://yangsimanalyzer.vercel.app` 으로 열립니다.
 
 > **Project Name을 `yangsim`으로 해야** 저장소에 들어 있는 OG 이미지 주소가
 > 그대로 맞습니다. 다른 이름이 배정되면 `index.html` 상단 주석에 표시된
@@ -232,9 +232,9 @@ const SUPABASE = {
 1. 도메인 구입
 2. Vercel → 프로젝트 → **Settings → Domains → Add**
 3. `index.html`, `robots.txt`, `sitemap.xml` 안의
-   `yangsim.vercel.app` 을 새 도메인으로 바꾸기 (저한테 말씀하시면 됩니다)
+   `yangsimanalyzer.vercel.app` 을 새 도메인으로 바꾸기 (저한테 말씀하시면 됩니다)
 
-`yangsim.vercel.app` 주소는 계속 살아 있으니 **이미 퍼진 링크도 안 깨집니다.**
+`yangsimanalyzer.vercel.app` 주소는 계속 살아 있으니 **이미 퍼진 링크도 안 깨집니다.**
 데이터는 Supabase에 있어서 도메인과 무관하게 그대로 이어집니다.
 
 ---
