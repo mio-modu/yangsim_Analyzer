@@ -99,3 +99,24 @@ N이 작을 때 작게 보이는 쪽이 자산을 지킵니다.
 AI가 불러온 불안에, 우리는 답이 아니라 기록으로 맞섭니다.
 
 **한 사람의 한 번이 그 시작입니다.**
+
+---
+
+## 손보는 법
+
+```bash
+node tools/check.js          # 배포 전 점검 — 끝까지 풀어 보고 수치를 잰다
+python3 tools/gen-bg.py      # 카드 배경을 다시 뽑는다 (Gemini)
+python3 tools/embed-bg.py    # 뽑은 배경을 index.html 안에 박아 넣는다
+node tools/make-og.js        # 링크 미리보기 이미지를 다시 그린다
+```
+
+`tools/check.js` 는 Supabase 를 건드리지 않습니다. 브라우저 저장소만 쓰므로
+실제 집계에 섞이지 않습니다.
+
+### 질문을 고칠 때
+
+`index.html` 안의 `Q` 배열만 고치면 됩니다. 단, **질문 수나 선택지 구조를
+바꾸면 Supabase 집계 함수도 같이 바꿔야 합니다.** 함수의 `substr(path, N, 2)`
+자리가 질문 개수와 묶여 있습니다. 안 바꾸면 사이트는 조용히 느린 쪽
+(전체 내려받기)으로 떨어집니다. `DEPLOY.md` 참고.
