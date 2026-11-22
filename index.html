@@ -431,21 +431,28 @@ const HCQ_SPAN = (()=>{
    값은 답 조합 73,728가지를 전부 돌려 분포에 맞춘 것이다.
    옛 문턱(46·54·64·74)은 가변값 55.3% · 방파제 0.8% · 경계선 0.2% 로
    여섯 가운데 둘이 사실상 안 나왔다. 지금은 15.7~23.6% 로 고르다.
-   RARE 를 60 에서 75 로 올린 까닭은 아래 rq 주석에 적었다. */
+   「특이점」의 희귀함 쪽 문턱은 여기 없다 — ARCH_TOP 주석을 보라. */
 const CUT = { warm:62, guardian:66, keeper:63, context:60, counter:56 };
 
-/* 「특이점」의 희귀함 문턱은 **고정값을 쓰지 않는다.**
-   RQ 는 설계값이 아니라 측정값이라, 답이 얼마나 쏠렸느냐에 따라 폭이
-   통째로 달라진다 — 고르게 답하면 63~69 안에 다 모이고 세게 쏠리면
-   36~78 로 퍼진다. 3만 명을 흉내 내 재어 보니 **고정 60 은 5~38%,
-   고정 75 는 어느 꼴에서도 0%** 였다. 어느 숫자를 박아도 틀린다.
+/* 「특이점」은 **가장 드문 자리다.** 그 '드문'을 몇 %로 볼 것인가 —
+   이것만 정하면 문턱은 쌓인 응답에서 저절로 나온다.
 
-   그래서 **지금 쌓인 분포에서 문을 셈한다** — 제일 흔한 길의 RQ 와
-   제일 드문 길의 RQ 를 구해 그 사이에 둔다. 쏠리면 문도 따라 올라간다.
+   고정 문턱은 어느 숫자를 박아도 틀린다. RQ 는 설계값이 아니라
+   측정값이라, 답이 얼마나 쏠렸느냐에 따라 폭이 통째로 달라지기
+   때문이다 — 고르게 답하면 66~68 안에 다 모이고 세게 쏠리면
+   17~71 로 퍼진다. 고정 60 은 5~38%, 고정 75 는 어느 꼴에서도 0%.
 
-   RARE_FRAC 은 **잠정값이다.** 실제 응답 200건이 모이면 다시 재서
-   고칠 것. 그때까지는 이것도 짐작이고, 짐작이라고 여기 적어 둔다. */
-const RARE_FRAC = 0.68;
+   예전에는 **지어낸 길** 둘(제일 흔한 길과 제일 드문 길)의 사이에
+   문을 뒀다. 그런데 「제일 드문 길」은 아무도 안 지나는 극단이라
+   군중에서 너무 멀다. 2만 명으로 재어 보니 적당히 쏠린 꼴에서 0.9%,
+   세게 쏠린 꼴에서 0.0% — 고치기 전과 마찬가지로 죽은 카드였다.
+   게다가 비율을 0.50 에서 0.60 으로 0.1 옮기면 40% → 1% 로 뒤집혔다.
+   「0% 아니면 절반」이라는 그 병이 자리만 옮긴 것이었다.
+
+   그래서 **지어낸 길을 버리고 응답자들의 RQ 분포에서 직접 잡는다.**
+   위 ARCH_TOP 자리가 문이다. 쏠리든 고르든 그 자리에 선다.
+   2만 명 · 적당히 쏠림에서 4.1~4.9% 로 안정적이다. */
+const ARCH_TOP = 0.10;
 
 const TYPES = [
   {id:'architect', ko:'특이점', c:'#B3A6FA',  en:'The Singularity',
@@ -515,32 +522,57 @@ function renderQ(){
 /* ── 계산 ── */
 
 /* 희귀함 = 선택지 희귀도 45% + 이유 희귀도 55%.
-   같은 결론이어도 이유가 다르면 다른 자리다. */
+   같은 결론이어도 이유가 다르면 다른 자리다.
+
+   **rqOf 와 rareGate 가 이 한 함수를 같이 쓴다.** 두 군데 적어 두면
+   45/55 를 고치는 날 한쪽만 고쳐지고, 문턱은 조용히 옛 셈으로 남는다 —
+   지도가 문턱을 베껴 적어 틀렸던 그 일과 똑같은 꼴이다. */
+function rarity(gc, gt, rc, rt){ return 0.45*(1-gc/gt) + 0.55*(1-rc/rt); }
+
 function rqOf(picks, st){
   let sum=0;
   picks.forEach(([g,r],i)=>{
     const gr=st.grp[i]||[], gt=gr.reduce((a,b)=>a+b,0)||1;
     const rr=(st.rsn[i]||[])[g]||[], rt=rr.reduce((a,b)=>a+b,0)||1;
-    sum += 0.45*(1-((gr[g]||0)/gt)) + 0.55*(1-((rr[r]||0)/rt));
+    sum += rarity(gr[g]||0, gt, rr[r]||0, rt);
   });
   return Math.round(sum/picks.length*100);
 }
 
-/* 지금 쌓인 분포에서 「특이점」의 문을 셈한다.
-   제일 흔한 길과 제일 드문 길의 RQ 를 구해 그 사이 RARE_FRAC 자리에 둔다. */
+/* 「특이점」의 문을 **응답자들의 RQ 분포**에서 잡는다.
+
+   집계 함수가 돌려주는 것은 문항별 선택 수뿐이다 — 개개인의 RQ 목록은
+   오지 않는다. 그래서 그 수만으로 분포를 접는다. 문항마다 (선택,이유)
+   하나하나가 「그 길을 지난 사람 비율」과 「그 길의 희귀도」를 가지므로,
+   다섯 문항을 차례로 접으면 응답자 전체의 RQ 분포가 나온다.
+   문항끼리 독립이라고 보는 근사다 — 실제 답은 조금 엮여 있겠지만,
+   아무도 안 지나는 극단 하나를 기준 삼는 것보다 군중에 훨씬 가깝다. */
 function rareGate(st){
-  const pick = (i, cmp) => {
-    const gr=st.grp[i]||[]; let g=0;
-    for(let k=1;k<gr.length;k++) if(cmp(gr[k], gr[g])) g=k;
-    const rr=(st.rsn[i]||[])[g]||[]; let r=0;
-    for(let k=1;k<rr.length;k++) if(cmp(rr[k], rr[r])) r=k;
-    return [g,r];
-  };
-  const n = (st.grp||[]).length; if(!n) return Infinity;
-  const common=[], rare=[];
-  for(let i=0;i<n;i++){ common.push(pick(i,(a,b)=>a>b)); rare.push(pick(i,(a,b)=>a<b)); }
-  const lo=rqOf(common,st), hi=rqOf(rare,st);
-  return hi<=lo ? Infinity : lo+(hi-lo)*RARE_FRAC;
+  if(!(st.n>0) || !(st.grp||[]).length) return Infinity;
+  let dist = new Map([[0,1]]);                 /* 기여합 → 그 합이 나올 비율 */
+  for(let i=0;i<Q.length;i++){
+    const gr=st.grp[i]||[], gt=gr.reduce((a,b)=>a+b,0)||1, nx=new Map();
+    gr.forEach((gc,g)=>{
+      const rr=(st.rsn[i]||[])[g]||[], rt=rr.reduce((a,b)=>a+b,0)||1;
+      rr.forEach((rc,r)=>{
+        if(!rc) return;
+        const share = rc/gt, v = rarity(gc, gt, rc, rt);
+        dist.forEach((p,sum)=>{ const k=sum+v; nx.set(k,(nx.get(k)||0)+p*share); });
+      });
+    });
+    if(!nx.size) return Infinity;
+    dist = nx;
+  }
+  /* rqOf 와 같은 자리에서 반올림해야 같은 눈금 위에 선다. */
+  const pts=[...dist].map(([sum,p])=>[Math.round(sum/Q.length*100),p]).sort((a,b)=>a[0]-b[0]);
+  const at = f => { let a=0; for(const [rq,p] of pts){ a+=p; if(a>=f) return rq; }
+                    return pts[pts.length-1][0]; };
+  const mid=at(0.5), cut=at(1-ARCH_TOP);
+  /* 폭이 없으면 문을 열지 않는다. 모두의 RQ 가 한 값에 쌓이면 어떤
+     문턱으로도 「드문 10%」를 고를 수 없다 — 못 고르는 걸 고른 척하면
+     그게 측정이 아니라 연출이다. 표본이 없으면 숫자를 안 내는 것과
+     같은 까닭이다. */
+  return cut<=mid ? Infinity : cut;
 }
 
 function score(){
@@ -572,12 +604,17 @@ function drawMap(cv,hcq,rq,gate){
   for(let i=0;i<=4;i++){ const x=pad+w*i/4, y=pad+h*i/4;
     c.beginPath(); c.moveTo(x,pad); c.lineTo(x,pad+h); c.stroke();
     c.beginPath(); c.moveTo(pad,y); c.lineTo(pad+w,y); c.stroke(); }
-  /* 특이점 칸은 CUT 에서 셈한다. 숫자를 여기 적지 않는다. */
-  const ax=CUT.warm/100, ay=Math.min(Math.max((gate==null?72:gate),0),100)/100;
-  c.fillStyle='rgba(142,123,245,.10)';
-  c.fillRect(pad+w*ax, pad, w*(1-ax), h*(1-ay));
-  c.font='500 9px ui-monospace, monospace'; c.fillStyle='#9A8CE8';
-  c.fillText('ARCHITECTS', pad+w*ax+4, pad+13);
+  /* 특이점 칸은 CUT 과 문에서 셈한다. 숫자를 여기 적지 않는다.
+     문이 닫혀 있으면(아무도 드물지 않으면) 칸도 그리지 않는다 —
+     없는 자리를 있는 것처럼 그리지 않는다. */
+  const ax=CUT.warm/100, gv=(gate==null?72:gate);
+  if(isFinite(gv)){
+    const ay=Math.min(Math.max(gv,0),100)/100;
+    c.fillStyle='rgba(142,123,245,.10)';
+    c.fillRect(pad+w*ax, pad, w*(1-ax), h*(1-ay));
+    c.font='500 9px ui-monospace, monospace'; c.fillStyle='#9A8CE8';
+    c.fillText('ARCHITECTS', pad+w*ax+4, pad+13);
+  }
   c.strokeStyle='#2A3540';
   c.beginPath(); c.moveTo(pad,pad+h); c.lineTo(pad+w,pad+h); c.stroke();
   c.beginPath(); c.moveTo(pad,pad); c.lineTo(pad,pad+h); c.stroke();
