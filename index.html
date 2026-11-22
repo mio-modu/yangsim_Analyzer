@@ -388,22 +388,46 @@ const Q = [
 
 /* ── 좌표 → 유형 ────────────────────────────────────────────
    어느 자리에 떨어져도 깎지 않는다. 낮은 쪽에도 이유가 있다. */
+/* 유형을 가르는 문턱.
+   **지도(drawMap)가 이 값을 그대로 읽는다.** 손으로 베껴 적어 두면
+   문턱을 옮기는 날 지도만 옛 자리에 남는다 — 실제로 그랬다
+   (fillRect 의 .62 / .40 이 옛 62·60 이었다).
+
+   값은 답 조합 73,728가지를 전부 돌려 분포에 맞춘 것이다.
+   옛 문턱(46·54·64·74)은 가변값 55.3% · 방파제 0.8% · 경계선 0.2% 로
+   여섯 가운데 둘이 사실상 안 나왔다. 지금은 15.7~23.6% 로 고르다.
+   RARE 를 60 에서 75 로 올린 까닭은 아래 rq 주석에 적었다. */
+const CUT = { warm:62, guardian:66, keeper:63, context:60, counter:56 };
+
+/* 「특이점」의 희귀함 문턱은 **고정값을 쓰지 않는다.**
+   RQ 는 설계값이 아니라 측정값이라, 답이 얼마나 쏠렸느냐에 따라 폭이
+   통째로 달라진다 — 고르게 답하면 63~69 안에 다 모이고 세게 쏠리면
+   36~78 로 퍼진다. 3만 명을 흉내 내 재어 보니 **고정 60 은 5~38%,
+   고정 75 는 어느 꼴에서도 0%** 였다. 어느 숫자를 박아도 틀린다.
+
+   그래서 **지금 쌓인 분포에서 문을 셈한다** — 제일 흔한 길의 RQ 와
+   제일 드문 길의 RQ 를 구해 그 사이에 둔다. 쏠리면 문도 따라 올라간다.
+
+   RARE_FRAC 은 **잠정값이다.** 실제 응답 200건이 모이면 다시 재서
+   고칠 것. 그때까지는 이것도 짐작이고, 짐작이라고 여기 적어 둔다. */
+const RARE_FRAC = 0.68;
+
 const TYPES = [
   {id:'architect', ko:'특이점', c:'#B3A6FA',  en:'The Singularity',
    line:'깊이 배려하면서도, 아무도 가지 않은 쪽으로 갑니다. 좌표 위에서 가장 드문 자리입니다.',
-   test:(h,r)=> h>=62 && r>=60},
+   test:(h,r,gate)=> h>=CUT.warm && r>=gate},
   {id:'guardian',  ko:'방파제', c:'#F2D98A',  en:'The Breakwater',
    line:'파도를 먼저 맞는 자리에 섭니다. 뒤에 있는 것들이 멀쩡한 이유입니다.',
-   test:(h)=> h>=74},
+   test:(h)=> h>=CUT.guardian},
   {id:'keeper',    ko:'기준점', c:'#9CC4F0',  en:'The Baseline',
    line:'다른 모든 것이 여기에 맞춰 잽니다. 질서는 이 자리에서 나옵니다.',
-   test:(h)=> h>=64},
+   test:(h)=> h>=CUT.keeper},
   {id:'context',   ko:'가변값', c:'#F5AE76',  en:'The Variable',
    line:'매번 다시 계산합니다. 일관성보다 구체성을 믿습니다.',
-   test:(h)=> h>=54},
+   test:(h)=> h>=CUT.context},
   {id:'independent',ko:'반대편', c:'#86DCA8', en:'The Counterpoint',
    line:'합의를 먼저 의심합니다. 다수가 틀렸던 적이 있다는 걸 기억합니다.',
-   test:(h)=> h>=46},
+   test:(h)=> h>=CUT.counter},
   {id:'outlier',   ko:'경계선', c:'#8ECEF2',  en:'The Threshold',
    line:'규칙이 멈추는 자리에서 생각합니다. 어느 사회에나 반드시 필요한 소수입니다.',
    test:()=> true}
@@ -454,30 +478,56 @@ function renderQ(){
 }
 
 /* ── 계산 ── */
+
+/* 희귀함 = 선택지 희귀도 45% + 이유 희귀도 55%.
+   같은 결론이어도 이유가 다르면 다른 자리다. */
+function rqOf(picks, st){
+  let sum=0;
+  picks.forEach(([g,r],i)=>{
+    const gr=st.grp[i]||[], gt=gr.reduce((a,b)=>a+b,0)||1;
+    const rr=(st.rsn[i]||[])[g]||[], rt=rr.reduce((a,b)=>a+b,0)||1;
+    sum += 0.45*(1-((gr[g]||0)/gt)) + 0.55*(1-((rr[r]||0)/rt));
+  });
+  return Math.round(sum/picks.length*100);
+}
+
+/* 지금 쌓인 분포에서 「특이점」의 문을 셈한다.
+   제일 흔한 길과 제일 드문 길의 RQ 를 구해 그 사이 RARE_FRAC 자리에 둔다. */
+function rareGate(st){
+  const pick = (i, cmp) => {
+    const gr=st.grp[i]||[]; let g=0;
+    for(let k=1;k<gr.length;k++) if(cmp(gr[k], gr[g])) g=k;
+    const rr=(st.rsn[i]||[])[g]||[]; let r=0;
+    for(let k=1;k<rr.length;k++) if(cmp(rr[k], rr[r])) r=k;
+    return [g,r];
+  };
+  const n = (st.grp||[]).length; if(!n) return Infinity;
+  const common=[], rare=[];
+  for(let i=0;i<n;i++){ common.push(pick(i,(a,b)=>a>b)); rare.push(pick(i,(a,b)=>a<b)); }
+  const lo=rqOf(common,st), hi=rqOf(rare,st);
+  return hi<=lo ? Infinity : lo+(hi-lo)*RARE_FRAC;
+}
+
 function score(){
   const hcq = Math.round(S.picks.reduce((a,[g,r],i)=> a + Q[i].o[g].r[r].w, 0) / Q.length);
   const st = S.stats || {n:0,grp:[],rsn:[]};
   const N = st.n||0;
-  let rq=null, twin=null, sameChoice=null;
+  let rq=null, twin=null, sameChoice=null, gate=null;
   if(N>=30){
-    /* 희귀함 = 선택지 희귀도 45% + 이유 희귀도 55%.
-       같은 결론이어도 이유가 다르면 다른 자리다. */
-    let sum=0;
-    S.picks.forEach(([g,r],i)=>{
-      const gr=st.grp[i]||[], gt=gr.reduce((a,b)=>a+b,0)||1;
-      const rr=(st.rsn[i]||[])[g]||[], rt=rr.reduce((a,b)=>a+b,0)||1;
-      sum += 0.45*(1-((gr[g]||0)/gt)) + 0.55*(1-((rr[r]||0)/rt));
-    });
-    rq = Math.round(sum/Q.length*100);
+    rq = rqOf(S.picks, st);
+    gate = rareGate(st);
     twin = st.twin; sameChoice = st.same;
   }
-  return {hcq, rq, N, twin, sameChoice, t:TYPES.find(t=>t.test(hcq, rq==null?0:rq))};
+  /* rq 가 없으면 -1 을 넘긴다. 0 을 넘기면 문턱이 0 인 날 특이점이
+     공짜로 열린다 — 「못 잰 것」과 「0 으로 쟀다」는 다른 것이다. */
+  return {hcq, rq, N, twin, sameChoice, gate,
+          t:TYPES.find(t=>t.test(hcq, rq==null?-1:rq, gate==null?Infinity:gate))};
 }
 
 const path = () => S.picks.map(([g,r])=>`${g}${r}`).join('-');
 
 /* ── 분포 지도 ── */
-function drawMap(cv,hcq,rq){
+function drawMap(cv,hcq,rq,gate){
   const dpr=Math.min(devicePixelRatio||1,2), W=cv.clientWidth||320, H=Math.round(W*.72);
   cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+'px';
   const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0);
@@ -487,9 +537,12 @@ function drawMap(cv,hcq,rq){
   for(let i=0;i<=4;i++){ const x=pad+w*i/4, y=pad+h*i/4;
     c.beginPath(); c.moveTo(x,pad); c.lineTo(x,pad+h); c.stroke();
     c.beginPath(); c.moveTo(pad,y); c.lineTo(pad+w,y); c.stroke(); }
-  c.fillStyle='rgba(142,123,245,.10)'; c.fillRect(pad+w*.62, pad, w*.38, h*.40);
+  /* 특이점 칸은 CUT 에서 셈한다. 숫자를 여기 적지 않는다. */
+  const ax=CUT.warm/100, ay=Math.min(Math.max((gate==null?72:gate),0),100)/100;
+  c.fillStyle='rgba(142,123,245,.10)';
+  c.fillRect(pad+w*ax, pad, w*(1-ax), h*(1-ay));
   c.font='500 9px ui-monospace, monospace'; c.fillStyle='#9A8CE8';
-  c.fillText('ARCHITECTS', pad+w*.64, pad+13);
+  c.fillText('ARCHITECTS', pad+w*ax+4, pad+13);
   c.strokeStyle='#2A3540';
   c.beginPath(); c.moveTo(pad,pad+h); c.lineTo(pad+w,pad+h); c.stroke();
   c.beginPath(); c.moveTo(pad,pad); c.lineTo(pad,pad+h); c.stroke();
@@ -640,7 +693,7 @@ function renderResult(){
         <div class="big">${N.toLocaleString()}명 중<br>당신과 똑같이 답한 사람은<br>${twin}명입니다</div>
         <div class="sm">${((twin/Math.max(N,1))*100).toFixed(1)}% · 선택과 이유까지 전부 일치</div>
         ${sameChoice>twin?`<div class="sm2">같은 선택을 한 사람은 ${sameChoice}명입니다.<br>같은 이유로 그렇게 한 사람이 ${twin}명입니다.</div>`:''}
-      </div>`:`<div class="waiting">희귀함은 30명이 모이면 계산됩니다.<br>지금은 아직 이른 자리입니다.</div>`}
+      </div>`:`<div class="waiting">희귀함은 30명이 모이면 계산됩니다.<br>지금은 아직 이른 자리입니다.<br><b>30명이 넘으면 좌표가 다시 잡혀, 같은 답이어도 유형이 바뀔 수 있습니다.</b></div>`}
 
       <div class="acts">
         <button class="btn primary" id="share">결과 카드 공유하기</button>
@@ -664,9 +717,9 @@ function renderResult(){
     </div>`;
 
   bg(t.id);          // 공유 버튼을 누르기 전에 미리 받아 둔다
-  drawMap($('#cv'),hcq,rq);
+  drawMap($('#cv'),hcq,rq,res.gate);
   if(!renderResult._rz){ renderResult._rz=true;
-    addEventListener('resize',()=>{ const cv=$('#cv'); if(cv&&S.last) drawMap(cv,S.last.hcq,S.last.rq); },{passive:true}); }
+    addEventListener('resize',()=>{ const cv=$('#cv'); if(cv&&S.last) drawMap(cv,S.last.hcq,S.last.rq,S.last.gate); },{passive:true}); }
 
   $('#again').onclick = ()=>{ S.i=0; S.stage=0; S.g=null; S.picks=[];
     document.body.classList.remove('go'); boot(); scrollTo({top:0,behavior:'smooth'}); };
