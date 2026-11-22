@@ -93,6 +93,10 @@ h1{font-family:var(--serif);font-weight:800;font-size:clamp(28px,7.6vw,40px);lin
 .ax .v{font-family:var(--mono);font-size:clamp(44px,13vw,58px);font-weight:700;line-height:1.05;
   margin-top:6px;font-variant-numeric:tabular-nums}
 .ax.warm .v{color:var(--warm)} .ax.rare .v{color:var(--rare-lit)}
+/* 눈금의 폭과 출처를 적는 자리. 수를 못 믿게 하려는 게 아니라
+   「61 이 한가운데」라는 걸 알려 주려는 것이다. */
+.ax .sc{font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--ink-faint);
+  margin-top:9px;letter-spacing:.01em;max-width:13em}
 
 canvas#cv{width:100%;max-width:400px;height:auto;display:block;margin:40px auto 0}
 
@@ -386,6 +390,37 @@ const Q = [
       {t:'그냥, 못 하겠다', w:66} ]} ]}
 ];
 
+/* ── 따뜻함 눈금의 실제 폭 ──────────────────────────────────
+   HCQ 는 설계값이라 **쓸 수 있는 폭이 Q 의 가중치에서 그대로 나온다.**
+   답 조합 73,728가지를 전부 재어 보면 눈금 0~100 가운데 41~78 만
+   나오고(101칸 중 38칸) 가운데값이 61 이다.
+
+   그런데 화면은 0~100 으로 보여 주므로 **사람은 「따뜻함 61」을
+   100점 만점으로 읽는다** — 사실은 그게 한가운데다.
+
+   눈금을 펴면 이미 공유된 카드의 숫자와 안 맞는다. 그래서 수는
+   건드리지 않고 **옆에 눈금의 폭과 가운데를 적는다.**
+
+   여기 숫자를 손으로 적지 않는다. Q 의 가중치를 고치면 이 값도
+   따라 바뀐다 — 지도가 문턱을 베껴 적어 틀렸던 것과 같은 까닭이다.
+   전수 열거(73,728) 대신 합의 분포를 접어 셈하므로 한순간에 끝난다. */
+const HCQ_SPAN = (()=>{
+  let dist = new Map([[0,1]]);
+  Q.forEach(q=>{
+    const ws = q.o.flatMap(o=>o.r.map(r=>r.w)), nx = new Map();
+    dist.forEach((n,sum)=> ws.forEach(w=>{ const k=sum+w; nx.set(k,(nx.get(k)||0)+n); }));
+    dist = nx;
+  });
+  /* 점수는 round(합/질문수) 다. 분포도 같은 자리에서 접어야 한다. */
+  const hist=new Map(); let total=0;
+  dist.forEach((n,sum)=>{ const h=Math.round(sum/Q.length);
+    hist.set(h,(hist.get(h)||0)+n); total+=n; });
+  const keys=[...hist.keys()].sort((a,b)=>a-b);
+  let acc=0, mid=keys[0];
+  for(const k of keys){ acc+=hist.get(k); if(acc>=total/2){ mid=k; break; } }
+  return {lo:keys[0], hi:keys[keys.length-1], mid};
+})();
+
 /* ── 좌표 → 유형 ────────────────────────────────────────────
    어느 자리에 떨어져도 깎지 않는다. 낮은 쪽에도 이유가 있다. */
 /* 유형을 가르는 문턱.
@@ -620,17 +655,22 @@ async function makeCard(res){
   c.fillText(ln,W/2,y);
 
   /* 두 축 */
-  const box=(x,label,val,col)=>{
+  const box=(x,label,val,col,note)=>{
     c.fillStyle='rgba(7,9,11,.68)'; c.fillRect(x,566,420,186);
     c.strokeStyle='rgba(185,198,212,.28)'; c.lineWidth=2; c.strokeRect(x,566,420,186);
     c.textAlign='center';
     c.font='500 22px ui-monospace, monospace'; c.fillStyle='#7A8894';
-    c.fillText(label, x+210, 614);
-    c.font='700 104px ui-monospace, monospace'; c.fillStyle=col;
-    c.fillText(val, x+210, 718);
+    c.fillText(label, x+210, 610);
+    c.font='700 100px ui-monospace, monospace'; c.fillStyle=col;
+    c.fillText(val, x+210, 706);
+    /* 눈금의 폭. 카드만 보는 사람도 61 이 한가운데임을 알아야 한다. */
+    if(note){ c.font='500 20px ui-monospace, monospace'; c.fillStyle='#6E7C88';
+              c.fillText(note, x+210, 740); }
   };
-  box(70,'HCQ · 따뜻함', String(res.hcq), '#E0A93B');
-  box(590,'RQ · 희귀함', res.rq===null?'—':String(res.rq), '#A99AF8');
+  box(70,'HCQ · 따뜻함', String(res.hcq), '#E0A93B',
+      `눈금 ${HCQ_SPAN.lo}–${HCQ_SPAN.hi} · 가운데 ${HCQ_SPAN.mid}`);
+  box(590,'RQ · 희귀함', res.rq===null?'—':String(res.rq), '#A99AF8',
+      res.rq===null?'30명부터 잽니다':`${res.N.toLocaleString()}명에서 쟀습니다`);
 
   /* 희귀 문장 */
   c.textAlign='center';
@@ -681,8 +721,10 @@ function renderResult(){
       <p class="line">${esc(t.line)}</p>
 
       <div class="axes">
-        <div class="ax warm"><div class="k">따뜻함</div><div class="v">${hcq}</div></div>
-        <div class="ax rare"><div class="k">희귀함</div><div class="v">${rq===null?'—':rq}</div></div>
+        <div class="ax warm"><div class="k">따뜻함</div><div class="v">${hcq}</div>
+          <div class="sc">설계값<br>눈금 ${HCQ_SPAN.lo}–${HCQ_SPAN.hi} · 가운데 ${HCQ_SPAN.mid}</div></div>
+        <div class="ax rare"><div class="k">희귀함</div><div class="v">${rq===null?'—':rq}</div>
+          <div class="sc">측정값<br>${rq===null?'30명부터 잽니다':`${N.toLocaleString()}명에서 쟀습니다`}</div></div>
       </div>
 
       <canvas id="cv"></canvas>
@@ -771,7 +813,8 @@ async function saveFile(blob, name){
 }
 
 function shareText(r){
-  return `나의 양심 좌표: ${r.t.ko} (${r.t.en})\n따뜻함 ${r.hcq}`
+  return `나의 양심 좌표: ${r.t.ko} (${r.t.en})`
+    + `\n따뜻함 ${r.hcq} (눈금 ${HCQ_SPAN.lo}–${HCQ_SPAN.hi}, 가운데 ${HCQ_SPAN.mid})`
     + (r.rq!==null&&r.twin!==null?` · 희귀함 ${r.rq}\n${r.N.toLocaleString()}명 중 나와 똑같이 답한 사람 ${r.twin}명`:'')
     + `\n\n다섯 개의 답 없는 질문. 당신은 어디에 서 있습니까.\n${location.href}`;
 }
