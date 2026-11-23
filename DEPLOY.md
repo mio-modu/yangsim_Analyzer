@@ -61,6 +61,7 @@ create table if not exists public.conscience_logs (
   path text not null,
   hcq  int,
   type text,
+  lang text,
   at   timestamptz default now()
 );
 
@@ -77,6 +78,23 @@ create policy "anyone can read"
 
 create index if not exists conscience_logs_path_idx
   on public.conscience_logs (path);
+```
+
+#### 【1-b】 이미 표를 만들어 두셨다면 — `lang` 칸 추가
+
+> **표가 이미 있고 기록이 쌓이고 있다면 이것부터 돌리십시오.**
+> 【1】의 `create table if not exists` 는 **이미 있는 표를 건드리지
+> 않습니다.** 칸은 따로 붙여야 합니다.
+
+```sql
+alter table public.conscience_logs
+  add column if not exists lang text;
+
+create index if not exists conscience_logs_lang_idx
+  on public.conscience_logs (lang);
+
+select count(*) as 전체, count(lang) as 언어있음
+  from public.conscience_logs;
 ```
 
 #### 【2】 표가 생겼는지 확인 — 꼭 하세요
@@ -216,6 +234,16 @@ const SUPABASE = {
 > 주소 끝에 `/` 를 붙이지 마세요. `https://xxxx.supabase.co` 까지입니다.
 
 ---
+
+> ### ⚠ 먼저 SQL, 그다음 배포
+>
+> `lang` 칸을 안 만든 표에 사이트가 `lang` 을 보내면 **PostgREST 가
+> 400으로 거절합니다.** 【1-b】를 먼저 돌리십시오.
+>
+> 순서가 뒤집혀도 **기록은 안 잃습니다** — 사이트가 거절을 알아보고
+> 언어 없이 한 번 더 보냅니다. 다만 그 사이 들어온 응답은 **언어가
+> 빈 채로** 남고, 그건 되돌릴 수 없습니다. 브라우저 콘솔에
+> `표에 lang 칸이 없습니다` 가 보이면 아직 안 돌린 것입니다.
 
 ## ③ 배포
 
